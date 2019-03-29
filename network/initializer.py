@@ -121,7 +121,7 @@ def init_3d_from_2d_dict(net, state_dict, method='inflation'):
                         param = param.view(dst_param_shape)
                 assert dst_param_shape == param.shape, \
                     "Initilizer:: error({}): {} != {}".format(name, dst_param_shape, param.shape)
-            net.state_dict()[name].copy_(param, broadcast=False)
+            net.state_dict()[name].copy_(param)
             src_state_keys.remove(name)
             dst_state_keys.remove(name)
 

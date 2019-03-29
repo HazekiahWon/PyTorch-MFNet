@@ -11,6 +11,12 @@ import torch
 from . import metric
 from . import callback
 
+from tensorboardX import SummaryWriter
+import time
+
+train_step = 0
+eval_step = 0
+
 """
 Static Model
 """
@@ -169,6 +175,9 @@ class model(static_model):
         self.save_checkpoint_freq = save_checkpoint_freq
         self.batch_size=opt_batch_size
 
+        expname = time.strftime('%y%m%d_%H%M%S', time.localtime())
+        self.writer = SummaryWriter(os.path.join('tb_reports',expname))
+
 
     """
     In order to customize the callback function,
@@ -200,6 +209,10 @@ class model(static_model):
             else:
                 lr_mult = 1.0
             param_group['lr'] = lr * lr_mult
+
+    def write_tb(self, nv, step):
+        for n,v in nv.items():
+            self.writer.add_scalar('train_'+n, v, step)
 
     """
     Optimization
@@ -265,7 +278,13 @@ class model(static_model):
 
                 if (i_batch % self.step_callback_freq) == 0:
                     # retrive eval results and reset metic
-                    self.callback_kwargs['namevals'] = metrics.get_name_value()
+                    nv = metrics.get_name_value()
+                    self.callback_kwargs['namevals'] = nv
+
+                    self.write_tb(nv, train_step)
+                    global train_step
+                    train_step += 1
+
                     metrics.reset()
                     # speed monitor
                     self.callback_kwargs['sample_elapse'] = sum_sample_elapse / sum_sample_inst
@@ -315,7 +334,13 @@ class model(static_model):
                 # evaluation callbacks
                 self.callback_kwargs['sample_elapse'] = sum_sample_elapse / sum_sample_inst
                 self.callback_kwargs['update_elapse'] = sum_forward_elapse / sum_sample_inst
-                self.callback_kwargs['namevals'] = metrics.get_name_value()
+                nv = metrics.get_name_value()
+                self.callback_kwargs['namevals'] = nv
+
+                self.write_tb(nv, eval_step)
+                global eval_step
+                eval_step += 1
+
                 self.step_end_callback()
 
         logging.info("Optimization done!")

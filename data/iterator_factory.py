@@ -64,7 +64,7 @@ def get_hmdb51(data_root='./dataset/HMDB51',
 
     return (train, val)
 
-def get_ucf101(data_root='./dataset/UCF101',
+def get_ucf101(data_root=os.path.join('.','dataset','UCF101'),
                clip_length=8,
                train_interval=2,
                val_interval=2,

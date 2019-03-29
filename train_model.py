@@ -10,6 +10,7 @@ from data import iterator_factory
 from train import metric
 from train.model import model
 from train.lr_scheduler import MultiFactorScheduler
+from tensorboardX import SummaryWriter
 
 
 def train_model(sym_net, model_prefix, dataset, input_conf,
