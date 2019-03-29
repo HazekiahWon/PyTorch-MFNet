@@ -46,14 +46,14 @@ parser.add_argument('--network', type=str, default='MFNet_3D',
 parser.add_argument('--pretrained_2d', type=bool, default=True,
                     help="load default 2D pretrained model.")
 parser.add_argument('--pretrained_3d', type=str, 
-                    default='./network/pretrained/MFNet3D_Kinetics-400_72.8.pth',
+                    default=None,#'./network/pretrained/MFNet3D_Kinetics-400_72.8.pth',
                     help="load default 3D pretrained model.")
 parser.add_argument('--resume-epoch', type=int, default=-1,
                     help="resume train")
 # optimization
 parser.add_argument('--fine-tune', type=bool, default=True,
                     help="apply different learning rate for different layers")
-parser.add_argument('--batch-size', type=int, default=32,
+parser.add_argument('--batch-size', type=int, default=4,
                     help="batch size")
 parser.add_argument('--lr-base', type=float, default=0.005,
                     help="learning rate")

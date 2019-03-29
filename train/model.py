@@ -211,7 +211,8 @@ class model(static_model):
             param_group['lr'] = lr * lr_mult
 
     def write_tb(self, nv, step):
-        for n,v in nv.items():
+        for item in nv:
+            n,v = item[0]
             self.writer.add_scalar('train_'+n, v, step)
 
     """
@@ -277,12 +278,12 @@ class model(static_model):
                 sum_sample_inst += data.shape[0]
 
                 if (i_batch % self.step_callback_freq) == 0:
+                    global train_step
                     # retrive eval results and reset metic
                     nv = metrics.get_name_value()
                     self.callback_kwargs['namevals'] = nv
 
                     self.write_tb(nv, train_step)
-                    global train_step
                     train_step += 1
 
                     metrics.reset()
@@ -307,6 +308,7 @@ class model(static_model):
             ###########
             if (eval_iter is not None) \
                 and ((i_epoch+1) % max(1, int(self.save_checkpoint_freq/2))) == 0:
+                global eval_step
                 logging.info("Start evaluating epoch {:d}:".format(i_epoch))
 
                 metrics.reset()
@@ -338,7 +340,6 @@ class model(static_model):
                 self.callback_kwargs['namevals'] = nv
 
                 self.write_tb(nv, eval_step)
-                global eval_step
                 eval_step += 1
 
                 self.step_end_callback()
