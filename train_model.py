@@ -96,7 +96,7 @@ def train_model(sym_net, model_prefix, dataset, input_conf,
         step_counter = epoch_start * train_iter.__len__()
 
     # set learning rate scheduler
-    num_worker = dist.get_world_size() if torch.distributed._initialized else 1
+    num_worker = dist.get_world_size() if torch.distributed.is_available() else 1
     lr_scheduler = MultiFactorScheduler(base_lr=lr_base,
                                         steps=[int(x/(batch_size*num_worker)) for x in lr_steps],
                                         factor=lr_factor,

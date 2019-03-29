@@ -150,7 +150,7 @@ class MFNET_3D(nn.Module):
         if pretrained:
             import torch
             load_method='inflation' # 'random', 'inflation'
-            pretrained_model=os.path.join(os.path.dirname(os.path.realpath(__file__)), 'pretrained/MFNet2D_ImageNet1k-0000.pth')
+            pretrained_model=os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.join('pretrained','MFNet2D_ImageNet1k-0000.pth'))
             logging.info("Network:: graph initialized, loading pretrained model: `{}'".format(pretrained_model))
             assert os.path.exists(pretrained_model), "cannot locate: `{}'".format(pretrained_model)
             state_dict_2d = torch.load(pretrained_model)

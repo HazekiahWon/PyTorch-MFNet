@@ -65,7 +65,7 @@ def init_3d_from_2d_dict(net, state_dict, method='inflation'):
             # normalize
             src = src/float(dshape[2])
             src = src.view(dshape[0],dshape[1], 1, dshape[3],dshape[4])
-            dst.copy_(src, broadcast=True)
+            dst.copy_(src)
         elif method == 'random':
             dst = torch.FloatTensor(dshape)
             tmp = torch.FloatTensor(src.shape)

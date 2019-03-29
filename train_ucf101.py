@@ -29,7 +29,7 @@ parser.add_argument('--task-name', type=str, default='',
                     help="name of current task, leave it empty for using folder name")
 parser.add_argument('--model-dir', type=str, default="./exps/models",
                     help="set logging file.")
-parser.add_argument('--log-file', type=str, default="",
+parser.add_argument('--log-file', type=str, default="logger.txt",
                     help="set logging file.")
 # device
 parser.add_argument('--gpus', type=str, default="0,1,2,3,4,5,6,7",
