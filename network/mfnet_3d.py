@@ -12,6 +12,8 @@ try:
 except:
     import initializer
 
+from faun import FAULayer_3d, FAUKernel_thw,FAUKernel_3d
+
 
 class BN_AC_CONV3D(nn.Module):
 
@@ -47,6 +49,8 @@ class MF_UNIT(nn.Module):
         # adapter
         if first_block:
             self.conv_w1 = BN_AC_CONV3D(num_in=num_in,  num_filter=num_out, kernel=(1,1,1), pad=(0,0,0), stride=stride)
+
+
 
     def forward(self, x):
 
@@ -142,6 +146,13 @@ class MFNET_3D(nn.Module):
                         ]))
         self.classifier = nn.Linear(conv5_num_out, num_classes)
 
+        in_channels,kq_stride = 192,3
+        inter_channels = in_channels//kq_stride
+        kernel1 = FAUKernel_3d(inter_channels, kq_stride=1, latent_stride=1)
+        kernel2 = FAUKernel_thw(inter_channels, latent_stride=1)
+
+        self.faul = FAULayer_3d(in_channels=in_channels, kernel=kernel2, kq_stride=kq_stride)
+
 
         #############
         # Initialization
@@ -164,11 +175,12 @@ class MFNET_3D(nn.Module):
         h = self.conv1(x)   # x224 -> x112
         h = self.maxpool(h) # x112 ->  x56
 
-        h = self.conv2(h)   #  x56 ->  x56
-        h = self.conv3(h)   #  x56 ->  x28
-        h = self.conv4(h)   #  x28 ->  x14
-        h = self.conv5(h)   #  x14 ->   x7
-
+        h = self.conv2(h)   #  x56 ->  x56 16,16,56,56
+        h = self.conv3(h)   #  x56 ->  x28 96,8,56,56
+        h = self.faul(h)
+        h = self.conv4(h)   #  x28 ->  x14 192,8,28,28
+        h = self.conv5(h)   #  x14 ->   x7 384,8,14,14
+        # 768,8,7,7
         h = self.tail(h)
         h = self.globalpool(h)
 
