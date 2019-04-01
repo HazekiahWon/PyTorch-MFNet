@@ -75,6 +75,8 @@ parser.add_argument('--world-size', default=1, type=int,
 parser.add_argument('--dist-url', default='tcp://192.168.0.11:23456', type=str,
                     help='url used to set up distributed training')
 
+parser.add_argument('--use_fau', default=False, type=bool)
+
 def autofill(args):
     # customized
     if not args.task_name:

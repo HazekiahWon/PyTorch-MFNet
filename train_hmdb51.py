@@ -136,6 +136,7 @@ if __name__ == "__main__":
     net, input_conf = get_symbol(name=args.network,
                      pretrained=args.pretrained_2d if args.resume_epoch < 0 else None,
                      print_net=True if args.distributed else False,
+                                 use_fau=args.use_fau,
                      **dataset_cfg)
 
     # training

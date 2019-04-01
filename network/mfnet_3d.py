@@ -68,7 +68,7 @@ class MF_UNIT(nn.Module):
 
 class MFNET_3D(nn.Module):
 
-    def __init__(self, num_classes, pretrained=False, **kwargs):
+    def __init__(self, use_fau, num_classes, pretrained=False, **kwargs):
         super(MFNET_3D, self).__init__()
 
         groups = 16
@@ -146,12 +146,14 @@ class MFNET_3D(nn.Module):
                         ]))
         self.classifier = nn.Linear(conv5_num_out, num_classes)
 
-        in_channels,kq_stride = 192,3
-        inter_channels = in_channels//kq_stride
-        kernel1 = FAUKernel_3d(inter_channels, kq_stride=1, latent_stride=1)
-        kernel2 = FAUKernel_thw(inter_channels, latent_stride=1)
+        self.use_fau = use_fau
+        if use_fau:
+            in_channels,kq_stride = 192,3
+            inter_channels = in_channels//kq_stride
+            kernel1 = FAUKernel_3d(inter_channels, kq_stride=1, latent_stride=1)
+            kernel2 = FAUKernel_thw(inter_channels, latent_stride=1)
 
-        self.faul = FAULayer_3d(in_channels=in_channels, kernel=kernel2, kq_stride=kq_stride)
+            self.faul = FAULayer_3d(in_channels=in_channels, kernel=kernel2, kq_stride=kq_stride)
 
 
         #############
@@ -177,7 +179,7 @@ class MFNET_3D(nn.Module):
 
         h = self.conv2(h)   #  x56 ->  x56 16,16,56,56
         h = self.conv3(h)   #  x56 ->  x28 96,8,56,56
-        h = self.faul(h)
+        if self.use_fau: h = self.faul(h)
         h = self.conv4(h)   #  x28 ->  x14 192,8,28,28
         h = self.conv5(h)   #  x14 ->   x7 384,8,14,14
         # 768,8,7,7
