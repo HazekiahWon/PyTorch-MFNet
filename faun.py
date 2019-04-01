@@ -245,12 +245,156 @@ class FAUKernel(nn.Module):
         return visible_nodes
 
 
+
+
+class FAUCore(nn.Module):
+    def v2l(self, key_feature, func):
+        """
+        visible to latent
+        :param key_feature: b,c,h,w
+        :param func: transform k to d dim, b,c,hw => b,d,hw
+        :return: b,d,c
+        """
+        B, _, H_key, W_key = key_feature.shape
+        # Step1: Visible-to-latent message passing
+        ###### gav=aff(k): c h w - d h w - d hw
+        ###### ln =gav \dot k: d hw . hw c - d c
+        # import pdb; pdb.set_trace()
+        graph_adj_v2l = func(key_feature)  # B, latent_dim, H, W
+        graph_adj_v2l = F.normalize(graph_adj_v2l.view(B, -1, H_key * W_key), dim=2)  # B, latent_dim, H_key*W_key
+        # import pdb; pdb.set_trace()
+        latent_nodes = torch.bmm(graph_adj_v2l,
+                                 key_feature.reshape((B, -1, H_key * W_key)).permute(0, 2, 1))  # B, latent_dim, in_channel
+
+        return latent_nodes
+
+    def l2l(self, latent_nodes):
+        latent_nodes_normalized = F.normalize(latent_nodes, dim=-1)
+        # Step2: latent-to-latent message passing
+        ###### afm=ln \dot ln: d c . c d - d d
+        ###### ln =afm \dot ln: d d . d c - d c => bt,d,c => b, td, c =>
+        affinity_matrix = torch.bmm(latent_nodes_normalized,
+                                    latent_nodes_normalized.permute(0, 2, 1))  # B, latent_dim, latent_dim
+        # import pdb; pdb.set_trace()
+        affinity_matrix = F.softmax(affinity_matrix, dim=-1)
+        # latent_nodes = torch.bmm(affinity_matrix/self.latent_dim, latent_nodes)
+        latent_nodes = torch.bmm(affinity_matrix, latent_nodes)  # d,c
+
+        return latent_nodes
+
+    def l2v(self, query_feature, latent_nodes, func):
+        """
+        latent to visible
+        :param query_feature: b,c,h,w
+        :param latent_nodes: b,d,c
+        :param func: transform q to d dim, b,c,hw => b,d,hw
+        :return: b,c,h,w
+        """
+        # Step3: latent-to-visible message passing
+        ###### gal=aff(q): c h w - d h w - d hw
+        ###### vn =ln \dot gal: c d . d hw - c hw - c h w
+        graph_adj_l2v = func(query_feature)  # B, latent, H_query*W_query
+        B, _, H_query, W_query = query_feature.shape
+        graph_adj_l2v = F.normalize(graph_adj_l2v.view(B, -1, H_query * W_query), dim=1)  # B, latent, H_query*W_query
+
+        visible_nodes = torch.bmm(latent_nodes.permute(0, 2, 1), graph_adj_l2v).view(B, -1, H_query,
+                                                                                     W_query)  # B, in_channel, H_query, W_query
+        return visible_nodes
+
+class FAUKernel_3d(FAUCore):
+    def __init__(self, kq_channels, kq_stride=2, numlayer=1, latent_dim=64, norm_layer=nn.BatchNorm2d, query_normalize=True, key_normalize=True):
+        super(FAUKernel_3d, self).__init__()
+        self.num_layer = numlayer
+        self.kq_channels = kq_channels
+        self.inner_kq_channels = kq_channels // kq_stride
+        self.hw_latent_dim = latent_dim
+        self.t_latent_dim = latent_dim
+        self.query_normalize = query_normalize
+        self.key_normalize = key_normalize
+        self.hw_v2l = nn.Sequential(
+            nn.Conv2d(in_channels=kq_channels, out_channels=self.hw_latent_dim, kernel_size=1, stride=1, padding=0,
+                      bias=False),
+            norm_layer(self.hw_latent_dim),
+            nn.ReLU()
+        ) # c => d1
+        self.hw_l2v = nn.Sequential(
+            nn.Conv2d(in_channels=kq_channels, out_channels=self.hw_latent_dim, kernel_size=1, stride=1, padding=0,
+                      bias=False),
+            norm_layer(self.hw_latent_dim),
+            nn.ReLU()
+        ) # c => d1
+        self.t_v2l = nn.Sequential(
+            nn.Conv2d(in_channels=self.inner_kq_channels, out_channels=self.t_latent_dim, kernel_size=1, stride=1, padding=0,
+                      bias=False),
+            norm_layer(self.t_latent_dim),
+            nn.ReLU()
+        ) # c => d2
+        self.t_l2v = nn.Sequential(
+            nn.Conv2d(in_channels=self.inner_kq_channels, out_channels=self.t_latent_dim, kernel_size=1, stride=1, padding=0,
+                      bias=False),
+            norm_layer(self.t_latent_dim),
+            nn.ReLU()
+        ) # c => d2
+        self.f_k_latent = nn.Sequential(
+                                    nn.Conv2d(in_channels=kq_channels, out_channels=self.inner_kq_channels, kernel_size=1, stride=1, padding=0, bias=False),
+                                    norm_layer(self.inner_kq_channels)) # c => c
+        self.f_q_latent = nn.Sequential(
+                                    nn.Conv2d(in_channels=kq_channels, out_channels=self.inner_kq_channels, kernel_size=1, stride=1, padding=0, bias=False),
+                                    norm_layer(self.inner_kq_channels))
+
+        self.recover_latent = nn.Sequential(
+                                    nn.Conv2d(in_channels=self.inner_kq_channels, out_channels=self.kq_channels, kernel_size=1, stride=1, padding=0, bias=False),
+                                    norm_layer(self.kq_channels))
+
+    def forward(self, query_feature, key_feature):
+        """
+        Args:
+            query_feature: (tensor), B, in_channel, t, H_query, W_query
+            key_feature: (tensor), B, in_channel, t, H_key, W_key
+
+        Return:
+            b,t,c,h,w
+
+        """
+        b,c,t,hq,wq = query_feature.shape
+        b,c,t,hk,wk = key_feature.shape
+        query_feature = query_feature.permute(0,2,1,3,4)
+        query_feature = query_feature.reshape((b*t,c,hq,wq))
+
+        key_feature = key_feature.permute(0,2,1,3,4).reshape((b*t,c,hk,wk))
+        latent_hw = self.v2l(key_feature, self.hw_v2l)
+        for _ in range(self.num_layer):
+            latent_hw = self.l2l(latent_hw)
+
+        latent_hw = latent_hw.permute(0,2,1).view(b*t,c,-1,1) # bt,c,d1
+        #================
+        q, k = self.f_q_latent(latent_hw), self.f_k_latent(latent_hw) # bt,c1,d1,1
+        # Normalize in channel dimension
+        if self.query_normalize:
+            q = F.normalize(q, dim=1)
+        if self.key_normalize:
+            k = F.normalize(k, dim=1)
+        _,c1,d1,_ = q.shape
+        q = q.view(b,t,c1,d1).permute(0,2,1,3) # b,c1,t,d1
+        k = k.view(b, t, c1, d1).permute(0, 2, 1, 3)  # b,c1,t,d1
+        latent_t = self.v2l(k, self.t_v2l) # (b,d2,c1)
+        for _ in range(self.num_layer):
+            latent_t = self.l2l(latent_t)
+        latent_hw = self.l2v(q, latent_t, self.t_l2v)  # b,c1,t,d1
+        latent_hw = self.recover_latent(latent_hw) # b,c,t,d1
+        #================
+        latent_hw = latent_hw.permute(0,2,3,1).reshape((b*t,d1,self.kq_channels)) # bt,d1,c
+        visible_nodes = self.l2v(query_feature, latent_hw, self.hw_l2v) # bt,c,hq,wq
+
+        return visible_nodes.view(b,t,c,hq,wq).permute(0,2,1,3,4)
+
+
 class FAUKernel_thw(nn.Module): # kq_channel, latent channel
-    def __init__(self, kq_channels, latent_stride=2, norm_layer=nn.BatchNorm3d):
+    def __init__(self, kq_channels, latent_dim=64, norm_layer=nn.BatchNorm3d):
         super(FAUKernel_thw, self).__init__()
         self.in_channels = kq_channels
         # self.stride = stride
-        self.latent_dim = kq_channels // latent_stride
+        self.latent_dim = latent_dim
         ######## latent_dim is like prev inter channels, controlled by latent stride (set by faunet, 2)
         # Step1: Visible to Latent
         self.phi_func = nn.Sequential(
@@ -308,99 +452,29 @@ class FAUKernel_thw(nn.Module): # kq_channel, latent channel
 
         return visible_nodes
 
-class FAUKernel_3d(nn.Module):
-    def __init__(self, kq_channels, kq_stride=2, latent_stride=2, norm_layer=nn.BatchNorm2d, query_normalize=True, key_normalize=True):
-        super(FAUKernel_3d, self).__init__()
-        self.kq_channels = kq_channels
-        self.inner_kq_channels = kq_channels // kq_stride
-        self.hw_latent_dim = kq_channels // latent_stride
-        self.t_latent_dim = self.inner_kq_channels // latent_stride
-        self.query_normalize = query_normalize
-        self.key_normalize = key_normalize
-        self.hw_v2l = nn.Sequential(
-            nn.Conv2d(in_channels=kq_channels, out_channels=self.hw_latent_dim, kernel_size=1, stride=1, padding=0,
+
+class FAUKernel_thw2(FAUCore): # slower
+    def __init__(self, kq_channels, numlayer=1, latent_dim=64, norm_layer=nn.BatchNorm2d):
+        super(FAUKernel_thw2, self).__init__()
+        self.num_layer = numlayer
+        self.in_channels = kq_channels
+        # self.stride = stride
+        self.latent_dim = latent_dim
+        ######## latent_dim is like prev inter channels, controlled by latent stride (set by faunet, 2)
+        # Step1: Visible to Latent
+        self.phi_func = nn.Sequential(
+            nn.Conv2d(in_channels=kq_channels, out_channels=self.latent_dim, kernel_size=1, stride=1, padding=0,
                       bias=False),
-            norm_layer(self.hw_latent_dim),
+            norm_layer(self.latent_dim),
             nn.ReLU()
-        ) # c => d1
-        self.hw_l2v = nn.Sequential(
-            nn.Conv2d(in_channels=kq_channels, out_channels=self.hw_latent_dim, kernel_size=1, stride=1, padding=0,
-                      bias=False),
-            norm_layer(self.hw_latent_dim),
+        )
+
+        self.phi_prime_func = nn.Sequential(
+            nn.Conv2d(in_channels=kq_channels, out_channels=self.latent_dim, kernel_size=1,  # half the in channels
+                      stride=1, padding=0, bias=False),
+            norm_layer(self.latent_dim),
             nn.ReLU()
-        ) # c => d1
-        self.t_v2l = nn.Sequential(
-            nn.Conv2d(in_channels=self.inner_kq_channels, out_channels=self.t_latent_dim, kernel_size=1, stride=1, padding=0,
-                      bias=False),
-            norm_layer(self.t_latent_dim),
-            nn.ReLU()
-        ) # c => d2
-        self.t_l2v = nn.Sequential(
-            nn.Conv2d(in_channels=self.inner_kq_channels, out_channels=self.t_latent_dim, kernel_size=1, stride=1, padding=0,
-                      bias=False),
-            norm_layer(self.t_latent_dim),
-            nn.ReLU()
-        ) # c => d2
-        self.f_k_latent = nn.Sequential(
-                                    nn.Conv2d(in_channels=kq_channels, out_channels=self.inner_kq_channels, kernel_size=1, stride=1, padding=0, bias=False),
-                                    norm_layer(self.inner_kq_channels)) # c => c
-        self.f_q_latent = nn.Sequential(
-                                    nn.Conv2d(in_channels=kq_channels, out_channels=self.inner_kq_channels, kernel_size=1, stride=1, padding=0, bias=False),
-                                    norm_layer(self.inner_kq_channels))
-
-        self.recover_latent = nn.Sequential(
-                                    nn.Conv2d(in_channels=self.inner_kq_channels, out_channels=self.kq_channels, kernel_size=1, stride=1, padding=0, bias=False),
-                                    norm_layer(self.kq_channels))
-
-
-    def v2l(self, key_feature, func):
-        """
-        visible to latent
-        :param key_feature: b,c,h,w
-        :param func: transform k to d dim, b,c,hw => b,d,hw
-        :return: b,d,c
-        """
-        B, _, H_key, W_key = key_feature.shape
-        # Step1: Visible-to-latent message passing
-        ###### gav=aff(k): c h w - d h w - d hw
-        ###### ln =gav \dot k: d hw . hw c - d c
-        # import pdb; pdb.set_trace()
-        graph_adj_v2l = func(key_feature)  # B, latent_dim, H, W
-        graph_adj_v2l = F.normalize(graph_adj_v2l.view(B, -1, H_key * W_key), dim=2)  # B, latent_dim, H_key*W_key
-        # import pdb; pdb.set_trace()
-        latent_nodes = torch.bmm(graph_adj_v2l,
-                                 key_feature.reshape((B, -1, H_key * W_key)).permute(0, 2, 1))  # B, latent_dim, in_channel
-        latent_nodes_normalized = F.normalize(latent_nodes, dim=-1)
-        # Step2: latent-to-latent message passing
-        ###### afm=ln \dot ln: d c . c d - d d
-        ###### ln =afm \dot ln: d d . d c - d c => bt,d,c => b, td, c =>
-        affinity_matrix = torch.bmm(latent_nodes_normalized,
-                                    latent_nodes_normalized.permute(0, 2, 1))  # B, latent_dim, latent_dim
-        # import pdb; pdb.set_trace()
-        affinity_matrix = F.softmax(affinity_matrix, dim=-1)
-        # latent_nodes = torch.bmm(affinity_matrix/self.latent_dim, latent_nodes)
-        latent_nodes = torch.bmm(affinity_matrix, latent_nodes) # d,c
-
-        return latent_nodes
-
-    def l2v(self, query_feature, latent_nodes, func):
-        """
-        latent to visible
-        :param query_feature: b,c,h,w
-        :param latent_nodes: b,d,c
-        :param func: transform q to d dim, b,c,hw => b,d,hw
-        :return: b,c,h,w
-        """
-        # Step3: latent-to-visible message passing
-        ###### gal=aff(q): c h w - d h w - d hw
-        ###### vn =ln \dot gal: c d . d hw - c hw - c h w
-        graph_adj_l2v = func(query_feature)  # B, latent, H_query*W_query
-        B, _, H_query, W_query = query_feature.shape
-        graph_adj_l2v = F.normalize(graph_adj_l2v.view(B, -1, H_query * W_query), dim=1)  # B, latent, H_query*W_query
-
-        visible_nodes = torch.bmm(latent_nodes.permute(0, 2, 1), graph_adj_l2v).view(B, -1, H_query,
-                                                                                     W_query)  # B, in_channel, H_query, W_query
-        return visible_nodes
+        )
 
     def forward(self, query_feature, key_feature):
         """
@@ -408,35 +482,19 @@ class FAUKernel_3d(nn.Module):
             query_feature: (tensor), B, in_channel, t, H_query, W_query
             key_feature: (tensor), B, in_channel, t, H_key, W_key
 
-        Return:
-            b,t,c,h,w
-
         """
-        b,c,t,hq,wq = query_feature.shape
-        b,c,t,hk,wk = key_feature.shape
-        query_feature = query_feature.permute(0,2,1,3,4)
-        query_feature = query_feature.reshape((b*t,c,hq,wq))
+        B, c, t, H_key, W_key = key_feature.shape
+        B, c, t, H_query, W_query = query_feature.shape
+        key_feature = key_feature.view((B,c,t*H_key,W_key))
+        query_feature = query_feature.reshape((B, c, t * H_query, W_query))
+        latent_nodes = self.v2l(key_feature, self.phi_func)
+        for _ in range(self.num_layer):
+            latent_nodes = self.l2l(latent_nodes)
 
-        key_feature = key_feature.permute(0,2,1,3,4).reshape((b*t,c,hk,wk))
-        latent_hw = self.v2l(key_feature, self.hw_v2l).permute(0,2,1).view(b*t,c,-1,1) # bt,c,d1
-        #================
-        q, k = self.f_q_latent(latent_hw), self.f_k_latent(latent_hw) # bt,c1,d1,1
-        # Normalize in channel dimension
-        if self.query_normalize:
-            q = F.normalize(q, dim=1)
-        if self.key_normalize:
-            k = F.normalize(k, dim=1)
-        _,c1,d1,_ = q.shape
-        q = q.view(b,t,c1,d1).permute(0,2,1,3) # b,c1,t,d1
-        k = k.view(b, t, c1, d1).permute(0, 2, 1, 3)  # b,c1,t,d1
-        latent_t = self.v2l(k, self.t_v2l) # (b,d2,c1)
-        latent_hw = self.l2v(q, latent_t, self.t_l2v)  # b,c1,t,d1
-        latent_hw = self.recover_latent(latent_hw) # b,c,t,d1
-        #================
-        latent_hw = latent_hw.permute(0,2,3,1).reshape((b*t,d1,self.kq_channels)) # bt,d1,c
-        visible_nodes = self.l2v(query_feature, latent_hw, self.hw_l2v) # bt,c,hq,wq
+        visible_nodes = self.l2v(query_feature, latent_nodes, self.phi_prime_func)
+        visible_nodes = visible_nodes.view(B, -1, t, H_query, W_query)  # B, in_channel, H_query, W_query
 
-        return visible_nodes.view(b,t,c,hq,wq).permute(0,2,1,3,4)
+        return visible_nodes
 
 class FAULayer_3d(nn.Module):
     """
@@ -510,8 +568,8 @@ if __name__ == "__main__":
     inp = torch.randn(1,192,8,28,28)
     hw_stride = 3
     inter_channels = 192//hw_stride
-    kernel1 = FAUKernel_3d(inter_channels, kq_stride=1, latent_stride=1)
-    kernel2 = FAUKernel_thw(inter_channels, latent_stride=1)
+    kernel1 = FAUKernel_3d(inter_channels, kq_stride=1)
+    kernel2 = FAUKernel_thw(inter_channels)
     ks = [kernel1,kernel2]
     for k in ks:
         s = time.time()

@@ -52,8 +52,6 @@ parser.add_argument('--resume-epoch', type=int, default=-1,
 # optimization
 parser.add_argument('--fine-tune', type=bool, default=False,
                     help="resume training and then fine tune the classifier")
-parser.add_argument('--resume-epoch', type=int, default=-1,
-                    help="resume train")
 parser.add_argument('--batch-size', type=int, default=128,
                     help="batch size")
 parser.add_argument('--lr-base', type=float, default=0.05,
