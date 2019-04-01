@@ -55,7 +55,7 @@ class static_model(object):
 
     def get_checkpoint_path(self, epoch):
         assert self.model_prefix, "model_prefix undefined!"
-        if torch.distributed.is_available():
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
             hostname = socket.gethostname()
             checkpoint_path = "{}_at-{}_ep-{:04d}.pth".format(self.model_prefix, hostname, epoch)
         else:
