@@ -75,7 +75,7 @@ parser.add_argument('--world-size', default=1, type=int,
 parser.add_argument('--dist-url', default='tcp://192.168.0.11:23456', type=str,
                     help='url used to set up distributed training')
 
-parser.add_argument('--use_fau', default=-1, type=int)
+parser.add_argument('--use_fau', default=1, type=int)
 
 def autofill(args):
     # customized
@@ -138,6 +138,7 @@ if __name__ == "__main__":
     net, input_conf = get_symbol(name=args.network,
                      pretrained=args.pretrained_2d if args.resume_epoch < 0 else None,
                      print_net=True if args.distributed else False,
+                                 use_fau=args.use_fau,
                      **dataset_cfg)
 
     # training
