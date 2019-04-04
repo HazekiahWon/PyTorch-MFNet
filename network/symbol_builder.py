@@ -3,7 +3,7 @@ import logging
 from .mfnet_3d import MFNET_3D
 from .config import get_config
 
-def get_symbol(name, print_net=False, use_fau=False, **kwargs):
+def get_symbol(name, print_net=False, use_fau=-1, **kwargs):
 
     if name.upper() == "MFNET_3D":
         net = MFNET_3D(use_fau, **kwargs)
