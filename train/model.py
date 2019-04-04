@@ -149,7 +149,10 @@ class model(static_model):
         # load parameters
         if kwargs:
             logging.warning("Unknown kwargs: {}".format(kwargs))
-
+        expname = time.strftime('%y%m%d_%H%M%S', time.localtime())
+        sep_idx = model_prefix.rfind(os.path.sep)
+        mdir,tsk = model_prefix[:sep_idx],model_prefix[sep_idx+1:]
+        model_prefix = os.path.join(mdir, expname,tsk)
         super(model, self).__init__(net, criterion=criterion,
                                          model_prefix=model_prefix)
 
@@ -175,7 +178,7 @@ class model(static_model):
         self.save_checkpoint_freq = save_checkpoint_freq
         self.batch_size=opt_batch_size
 
-        expname = time.strftime('%y%m%d_%H%M%S', time.localtime())
+
         self.writer = SummaryWriter(os.path.join('tb_reports',expname))
 
 

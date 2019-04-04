@@ -12,6 +12,7 @@ import dataset
 from train_model import train_model
 from network.symbol_builder import get_symbol
 
+
 parser = argparse.ArgumentParser(description="PyTorch Video Classification Parser")
 # debug
 parser.add_argument('--debug-mode', type=bool, default=True,
