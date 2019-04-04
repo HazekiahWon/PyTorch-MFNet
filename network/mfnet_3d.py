@@ -148,6 +148,7 @@ class MFNET_3D(nn.Module):
 
         self.use_fau = use_fau
         if use_fau>-1:
+
             c1 = c2 = 32
             d1 = 64
             d2 = 32
@@ -156,6 +157,7 @@ class MFNET_3D(nn.Module):
             kernel1 = FAUKernel_thw(c1, latent_dim=d3)  # 8x28x28=6400
             ks = [kernel1, kernel2]
             k = ks[use_fau]
+            logging.debug(f'using kernel[{use_fau}] {k}')
             self.faul = FAULayer_3d(in_channels=192, kernel=k, kq_channels=c1)
 
 
