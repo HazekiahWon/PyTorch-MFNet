@@ -147,13 +147,16 @@ class MFNET_3D(nn.Module):
         self.classifier = nn.Linear(conv5_num_out, num_classes)
 
         self.use_fau = use_fau
-        if use_fau:
-            in_channels,kq_stride = 192,3
-            inter_channels = in_channels//kq_stride
-            kernel1 = FAUKernel_3d(inter_channels, kq_stride=1, latent_stride=1)
-            kernel2 = FAUKernel_thw(inter_channels, latent_stride=1)
-
-            self.faul = FAULayer_3d(in_channels=in_channels, kernel=kernel2, kq_stride=kq_stride)
+        if use_fau>-1:
+            c1 = c2 = 32
+            d1 = 64
+            d2 = 32
+            d3 = 256
+            kernel2 = FAUKernel_3d(c1, c2, latent_dim1=d1, latent_dim2=d2)  # 28x28 - 64, td1=8x64 - 32
+            kernel1 = FAUKernel_thw(c1, latent_dim=d3)  # 8x28x28=6400
+            ks = [kernel1, kernel2]
+            k = ks[use_fau]
+            self.faul = FAULayer_3d(in_channels=192, kernel=k, kq_channels=c1)
 
 
         #############

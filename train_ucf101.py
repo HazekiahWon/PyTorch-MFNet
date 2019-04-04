@@ -53,7 +53,7 @@ parser.add_argument('--resume-epoch', type=int, default=-1,
 # optimization
 parser.add_argument('--fine-tune', type=bool, default=True,
                     help="apply different learning rate for different layers")
-parser.add_argument('--batch-size', type=int, default=4,
+parser.add_argument('--batch-size', type=int, default=32,
                     help="batch size")
 parser.add_argument('--lr-base', type=float, default=0.005,
                     help="learning rate")
@@ -75,7 +75,7 @@ parser.add_argument('--world-size', default=1, type=int,
 parser.add_argument('--dist-url', default='tcp://192.168.0.11:23456', type=str,
                     help='url used to set up distributed training')
 
-parser.add_argument('--use_fau', default=False, type=bool)
+parser.add_argument('--use_fau', default=-1, type=int)
 
 def autofill(args):
     # customized

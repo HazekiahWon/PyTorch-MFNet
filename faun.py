@@ -12,6 +12,7 @@ from torch.nn import functional as F
 import time
 # from maskrcnn_benchmark.layers import FrozenBatchNorm2d
 # from maskrcnn_benchmark.layers import Conv2d
+import pytorch_analyser
 
 class FAUNet(nn.Module):
     """
@@ -302,15 +303,16 @@ class FAUCore(nn.Module):
         return visible_nodes
 
 class FAUKernel_3d(FAUCore):
-    def __init__(self, kq_channels, kq_stride=2, numlayer=1, latent_dim=64, norm_layer=nn.BatchNorm2d, query_normalize=True, key_normalize=True):
+    def __init__(self, kq_channels, inner_kq_channels, numlayer=1, latent_dim1=64, latent_dim2=64, norm_layer=nn.BatchNorm2d, query_normalize=True, key_normalize=True):
         super(FAUKernel_3d, self).__init__()
         self.num_layer = numlayer
         self.kq_channels = kq_channels
-        self.inner_kq_channels = kq_channels // kq_stride
-        self.hw_latent_dim = latent_dim
-        self.t_latent_dim = latent_dim
+        self.inner_kq_channels = inner_kq_channels
+        self.hw_latent_dim = latent_dim1
+        self.t_latent_dim = latent_dim2
         self.query_normalize = query_normalize
         self.key_normalize = key_normalize
+        # kq - c, latent - d
         self.hw_v2l = nn.Sequential(
             nn.Conv2d(in_channels=kq_channels, out_channels=self.hw_latent_dim, kernel_size=1, stride=1, padding=0,
                       bias=False),
@@ -500,13 +502,13 @@ class FAULayer_3d(nn.Module):
     """
     """
     def __init__(self, in_channels, kernel, norm_layer=nn.BatchNorm3d, query_normalize=True, key_normalize=True,
-                 kq_stride=4, num_kernel=1):
+                 kq_channels=64, num_kernel=1):
         super(FAULayer_3d, self).__init__()
         self.query_normalize = query_normalize
         self.key_normalize = key_normalize
         self.num_kernel = num_kernel
         # Downchannels
-        kq_channels = in_channels // kq_stride
+        # kq_channels = in_channels // kq_stride
         ########### stride determines inter channels
         self.up_channel_conv = nn.Sequential(
                                     nn.Conv3d(in_channels=kq_channels,out_channels=in_channels,kernel_size=1,stride=1,padding=0,bias=False),
@@ -566,17 +568,24 @@ if __name__ == "__main__":
     # out = network(data_input)
 
     inp = torch.randn(1,192,8,28,28)
-    hw_stride = 3
-    inter_channels = 192//hw_stride
-    kernel1 = FAUKernel_3d(inter_channels, kq_stride=1)
-    kernel2 = FAUKernel_thw(inter_channels)
+
+    kq_channels = 64
+    c1 = c2 = 32
+    d1 = 64
+    d2 = 32
+    d3 = 256
+    kernel1 = FAUKernel_3d(c1, c2, latent_dim1=d1, latent_dim2=d2) # 28x28 - 64, td1=8x64 - 32
+    kernel2 = FAUKernel_thw(c1, latent_dim=d3) # 8x28x28=6400
     ks = [kernel1,kernel2]
     for k in ks:
         s = time.time()
-        net = FAULayer_3d(in_channels=192, kernel=k, kq_stride=hw_stride)
-        total_params_trainable = sum(p.numel() for p in net.parameters() if p.requires_grad)
+        net = FAULayer_3d(in_channels=192, kernel=k, kq_channels=c1)
+        # blob_dict, tracked_layers = pytorch_analyser.analyse(net, inp)
+        # pytorch_analyser.save_csv(tracked_layers,'analysis.csv')
         out = net(inp)
-        print(time.time()-s, out.shape, total_params_trainable)
+        dur = time.time() - s
+        total_params_trainable = sum(p.numel() for p in net.parameters() if p.requires_grad)
+        print(dur, out.shape, total_params_trainable)
     # import pdb; pdb.set_trace()
     # total_params = sum(p.numel() for p in network.parameters())
     #
