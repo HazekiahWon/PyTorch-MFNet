@@ -12,7 +12,7 @@ from torch.nn import functional as F
 import time
 # from maskrcnn_benchmark.layers import FrozenBatchNorm2d
 # from maskrcnn_benchmark.layers import Conv2d
-import pytorch_analyser
+# import pytorch_analyser
 
 class FAUNet(nn.Module):
     """
